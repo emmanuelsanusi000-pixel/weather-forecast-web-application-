@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Weather App</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#2563eb">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Weather App">
+    <link rel="apple-touch-icon" href="/icons/icon-192.png">
+    <style>
+        :root {
+            --bg-gradient: linear-gradient(135deg, #1e293b 0%, #2563eb 100%);
+            --card-bg: rgba(30, 41, 59, 0.55);
+            --accent: #2563eb;
+            --text: #e0e7ef;
+        }
+        body {
+            background: var(--bg-gradient);
+            color: var(--text);
+            background-size: cover;
+            background-position: center;
+            min-height: 100vh;
+            transition: background-image 0.5s ease-in-out;
+        }
+        body:not(.light-mode):not(.theme-winter):not(.theme-summer):not(.theme-contrast) {
+            background-image: url('valentin-muller-bWtd1ZyEy6w-unsplash.jpg');
+        }
+        body.light-mode {
+            background-image: url('https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=1500&q=80'); /* Light mode (sunny) */
+        }
+
+        .glass-card {
+            background: var(--card-bg);
+            box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border-radius: 32px;
+            border: 1.5px solid rgba(255,255,255,0.12);
+            transition: background 0.5s ease-in-out, border 0.5s ease-in-out;
+        }
+        .text-shadow {
+            text-shadow: 2px 2px 8px rgba(0,0,0,0.4);
+        }
+        .hour-scroll::-webkit-scrollbar {
+            display: none;
+        }
+        .forecast-tab-active {
+            border-bottom: 2px solid #fff;
+            color: #fff;
+        }
+        .forecast-tab {
+            color: #bfc9d1;
+        }
+
+        /* Dark Mode Styles adjustments */
+        body.light-mode .glass-card {
+            background: rgba(255, 255, 255, 0.65); /* Slightly less transparent for light mode */
+            border: 1.5px solid rgba(0,0,0,0.12);
+        }
+        body.light-mode .text-white, 
+        body.light-mode .text-white\/80, 
+        body.light-mode .text-white\/90, 
+        body.light-mode .text-white\/70, 
+        body.light-mode .text-white\/60 {
+            color: #1a202c; /* Darker text for light mode */
+        }
+        body.light-mode .text-white\/70, body.light-mode .text-white\/60 {
+            color: #4a5568; 
+        }
+        body.light-mode #searchButton, body.light-mode .forecast-tab {
+            color: #4a5568;
+        }
+        body.light-mode #searchButton:hover, body.light-mode .forecast-tab-active {
+            color: #1a202c;
+        }
+        body.light-mode .text-shadow {
+            text-shadow: 1px 1px 3px rgba(0,0,0,0.2);
+        }
+        .theme-winter {
+            --bg-gradient: linear-gradient(135deg, #a7c7e7 0%, #3b82f6 100%);
+            --card-bg: rgba(180, 220, 255, 0.55);
+            --accent: #3b82f6;
+            --text: #1e293b;
+        }
+        .theme-summer {
+            --bg-gradient: linear-gradient(135deg, #fbbf24 0%, #f59e42 100%);
+            --card-bg: rgba(255, 236, 179, 0.55);
+            --accent: #f59e42;
+            --text: #1e293b;
+        }
+        .theme-contrast {
+            --bg-gradient: #000;
+            --card-bg: #fff;
+            --accent: #ff0;
+            --text: #000;
+        }
+        .user-is-tabbing :focus-visible {
+            outline: 3px solid var(--accent);
+            outline-offset: 2px;
+        }
+        @media (max-width: 768px) {
+            .glass-card { padding: 1rem !important; }
+            .max-w-5xl, .max-w-3xl { max-width: 100vw !important; }
+        }
+        @media (min-width: 1600px) {
+            .max-w-5xl { max-width: 1400px !important; }
+        }
+    </style>
+</head>
+<body>
+    <!-- Theme Switcher -->
+    <header class="flex justify-between items-center p-4 max-w-5xl mx-auto w-full">
+      <h1 class="text-2xl font-bold text-white" tabindex="0">Weather App</h1>
+      <div class="flex gap-2 items-center">
+        <label for="themeSelect" class="text-sm text-white">Theme:</label>
+        <select id="themeSelect" class="rounded px-2 py-1">
+          <option value="">Default</option>
+          <option value="theme-winter">Winter</option>
+          <option value="theme-summer">Summer</option>
+          <option value="theme-contrast">High Contrast</option>
+        </select>
+      </div>
+    </header>
+    <!-- Loading Spinner -->
+    <div id="loadingSpinner" class="fixed inset-0 flex items-center justify-center bg-black/40 z-50 hidden" aria-live="polite" role="status">
+      <div class="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-blue-500"></div>
+    </div>
+    <div id="appError" style="display:none;"></div>
+    <!-- Severe Weather Alerts Section -->
+    <div id="weatherAlerts" class="hidden flex flex-col items-center justify-center mt-4 mb-2">
+        <div class="glass-card w-full max-w-5xl p-4 text-center text-lg font-semibold text-red-200" style="backdrop-filter: blur(8px);">
+            <!-- Alerts will be injected here -->
+        </div>
+    </div>
+    <!-- Detect My Location Button -->
+    <div class="flex flex-col items-center justify-center mt-2 mb-2">
+        <button onclick="detectAndShowWeather()" class="px-4 py-1 rounded bg-blue-500 text-white font-semibold hover:bg-blue-600 transition mb-2">
+            Detect My Location
+        </button>
+    </div>
+    <div class="flex items-center justify-center min-h-screen px-2 py-8">
+        <div class="glass-card w-full max-w-5xl flex flex-row overflow-hidden p-0 min-h-[520px]">
+            <!-- Left Main Section -->
+            <div class="flex-1 flex flex-col justify-between p-10 relative min-w-[340px]">
+                <!-- Top Row: Date/Time and City -->
+                <div class="flex items-start justify-between mb-2">
+                    <div id="dateTime" class="text-white/80 text-base font-medium"></div>
+                    <div class="flex items-center gap-2">
+                        <div id="locationSmall" class="text-white/90 text-lg font-semibold text-shadow"></div>
+                        <!-- Search, Input, and Dark Mode Toggles -->
+                        <input
+                          id="searchInput"
+                          type="text"
+                          placeholder="Search city..."
+                          class="ml-2 px-3 py-1 rounded bg-white/20 text-white placeholder-white/70 outline-none border border-white/30 focus:border-white/70 transition w-36"
+                          autocomplete="off"
+                        />
+                        <button id="searchButton" class="ml-2 text-white/70 hover:text-white transition p-1 rounded-full bg-white/10">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                            </svg>
+                        </button>
+                        <button id="darkModeToggle" class="ml-2 text-white/70 hover:text-white transition p-1 rounded-full bg-white/10">
+                            <!-- Sun Icon -->
+                            <svg id="sun-icon" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+                            </svg>
+                            <!-- Moon Icon (hidden by default) -->
+                            <svg id="moon-icon" class="h-6 w-6 hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+                <!-- Centered Main Weather Condition -->
+                <div class="flex-1 flex flex-col items-center justify-center mb-4">
+                    <div id="mainConditionLarge" class="text-5xl md:text-6xl font-light text-white/90 text-shadow opacity-90 tracking-wide text-center">-</div>
+                </div>
+                <!-- Bottom Row: Hourly Forecast Bar -->
+                <div class="w-full mt-2 mb-0">
+                    <div class="flex gap-2 overflow-x-auto hour-scroll pb-2" id="hourlyForecast">
+                        <!-- Hourly forecast items will be injected here -->
+                    </div>
+                </div>
+            </div>
+            <!-- Right Sidebar Section -->
+            <div class="w-full md:w-96 bg-white/5 glass-card flex flex-col justify-between p-10 border-l border-white/10 min-w-[320px]">
+                <!-- City and Details -->
+                <div class="mb-6">
+                    <div id="location" class="text-white text-xl font-semibold text-shadow mb-2">Loading...</div>
+                    <div class="flex items-center gap-2 mb-4">
+                        <div id="temperature" class="text-5xl font-bold text-white text-shadow">-°C</div>
+                        <div id="weatherIcon"></div>
+                    </div>
+                    <div class="flex items-center gap-2 text-white/70 text-base mb-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A4 4 0 1112 20h1" />
+                        </svg>
+                        <span id="windSpeed">- km/h</span>
+                    </div>
+                    <div class="flex items-center gap-2 text-white/70 text-base mb-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                        </svg>
+                        <span id="humidity">-%</span>
+                    </div>
+                </div>
+                <!-- Multi-day Forecast -->
+                <div>
+                    <div class="text-white/80 font-semibold mb-2">The Next Days Forecast</div>
+                    <div class="flex gap-4 mb-4">
+                        <button class="forecast-tab forecast-tab-active pb-1 px-2 font-medium">5 days</button>
+                        <button class="forecast-tab pb-1 px-2">14 days</button>
+                        <button class="forecast-tab pb-1 px-2">30 days</button>
+                    </div>
+                    <div id="forecast" class="space-y-2">
+                        <!-- Forecast items will be injected here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- Chart Section -->
+    <div class="flex flex-col items-center justify-center mt-8 mb-8">
+        <div class="glass-card w-full max-w-5xl p-6">
+            <div class="flex gap-4 mb-4">
+                <button id="chartHourlyBtn" class="forecast-tab forecast-tab-active pb-1 px-2 font-medium">Hourly (48h)</button>
+                <button id="chartDailyBtn" class="forecast-tab pb-1 px-2">Daily (10d)</button>
+                <button id="chartOtherBtn" class="forecast-tab pb-1 px-2">Wind/Precip</button>
+            </div>
+            <canvas id="weatherChart" height="100"></canvas>
+        </div>
+    </div>
+    <!-- Historical Weather Section -->
+    <div class="flex flex-col items-center justify-center mt-8 mb-8">
+        <div class="glass-card w-full max-w-3xl p-6">
+            <div class="flex flex-col md:flex-row items-center gap-4 mb-4">
+                <input id="historicalLocation" type="text" placeholder="Enter city..." class="px-3 py-1 rounded bg-white/20 text-white placeholder-white/70 outline-none border border-white/30 focus:border-white/70 transition w-48" autocomplete="off" />
+                <input id="historicalDate" type="date" class="px-3 py-1 rounded bg-white/20 text-white outline-none border border-white/30 focus:border-white/70 transition w-40" />
+                <button id="fetchHistoricalBtn" class="px-4 py-1 rounded bg-blue-500 text-white font-semibold hover:bg-blue-600 transition">Get Historical Weather</button>
+            </div>
+            <div id="historicalResult" class="mt-4 text-white"></div>
+        </div>
+    </div>
+    <!-- Insert the map below the main weather card -->
+    <div class="flex flex-col items-center justify-center mt-8 mb-8">
+        <div class="glass-card w-full max-w-5xl p-6">
+            <div id="weatherMap" style="height: 400px; width: 100%; border-radius: 16px;"></div>
+        </div>
+    </div>
+    <!-- Weather Recommendations Section -->
+    <div class="flex flex-col items-center justify-center mt-4 mb-8">
+        <div id="weatherRecommendations" class="glass-card w-full max-w-3xl p-6 text-center text-lg font-medium text-blue-100" style="backdrop-filter: blur(8px);">
+            <!-- Recommendations will be injected here -->
+        </div>
+    </div>
+    <!-- Share Weather Button -->
+    <div class="flex flex-col items-center justify-center mt-2 mb-8">
+        <button onclick="shareWeather()" class="px-4 py-1 rounded bg-green-500 text-white font-semibold hover:bg-green-600 transition mb-2">
+            Share Weather
+        </button>
+    </div>
+    <!-- Example Animated Weather Icons (SVG) -->
+    <div class="hidden">
+      <svg id="sunIconAnim" class="h-12 w-12" viewBox="0 0 64 64" aria-label="Animated sun icon" tabindex="0">
+        <circle cx="32" cy="32" r="14" fill="#FFD93B">
+          <animate attributeName="r" values="14;16;14" dur="2s" repeatCount="indefinite"/>
+        </circle>
+      </svg>
+      <svg id="rainIconAnim" class="h-12 w-12" viewBox="0 0 64 64" aria-label="Animated rain icon" tabindex="0">
+        <ellipse class="raindrop" cx="20" cy="40" rx="3" ry="8" fill="#3b82f6"/>
+        <ellipse class="raindrop" cx="32" cy="44" rx="3" ry="8" fill="#3b82f6"/>
+        <ellipse class="raindrop" cx="44" cy="40" rx="3" ry="8" fill="#3b82f6"/>
+      </svg>
+    </div>
+    <!-- GSAP CDN for advanced animation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <script src="script.js"></script>
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function() {
+          navigator.serviceWorker.register('service-worker.js');
+        });
+      }
+    </script>
+    <div id="weather">Loading weather...</div>
+</body>
+</html> 
